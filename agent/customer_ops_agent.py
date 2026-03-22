@@ -100,12 +100,12 @@ llm_with_tools = llm.bind_tools(ALL_TOOLS)
 
 
 # ---------------------------------------------------------------------------
-# BUG 2: Global memory dict — never cleared between sessions
+# Session-scoped memory — keyed by session_id so sessions never bleed into each other
 # ---------------------------------------------------------------------------
 
-# BUG 2: This dict lives at module scope and accumulates every session's
-# context without eviction. A new conversation may read stale data from a
-# prior customer when the planner injects `_GLOBAL_MEMORY` into state.
+# FIX Bug 2: Dict is keyed by session_id. Each session gets its own sub-dict
+# so _GLOBAL_MEMORY["last_query"] never exists at the top level, and a new
+# session cannot see a prior session's context.
 _GLOBAL_MEMORY: dict[str, Any] = {}
 
 
@@ -158,18 +158,18 @@ def planner_agent(state: CustomerOpsState) -> dict:
     )
     response = llm.invoke([SystemMessage(content=system), *state["messages"]])
 
-    # BUG 2: Write this session's context into the shared global dict without
-    # namespacing by session_id, so the next conversation will see stale data.
-    _GLOBAL_MEMORY["last_query"] = last_message        # BUG 2: overwrites previous customer's data
-    _GLOBAL_MEMORY["routed_to"] = routing["agent"]     # BUG 2: not session-scoped
+    # FIX Bug 2: Write context under the session_id key so sessions are isolated.
+    session_id = state["session_id"]
+    session_memory = {"last_query": last_message, "routed_to": routing["agent"]}
+    _GLOBAL_MEMORY[session_id] = session_memory
 
     return {
         "messages": [response],
         "current_agent": routing["agent"],
         "routing_decision": routing,
         "tool_calls_made": state.get("tool_calls_made", []),
-        "session_id": state["session_id"],
-        "memory": _GLOBAL_MEMORY,  # BUG 2: injects the shared (cross-session) dict
+        "session_id": session_id,
+        "memory": session_memory,  # FIX Bug 2: only this session's data
     }
 
 
@@ -204,19 +204,12 @@ def order_agent(state: CustomerOpsState) -> dict:
     last_message = state["messages"][-1].content if state["messages"] else ""
     has_order_id = any(w in last_message.upper() for w in ("ORD-", "ORDER #", "ORDER NUMBER"))
 
-    # BUG 3: For ambiguous queries (no explicit order ID), the agent retries the
-    # LLM call up to 5 times. Each retry is a full API round-trip, causing cost
-    # spikes on vague queries. The condition never breaks early — it always runs
-    # all `max_retries` iterations regardless of response quality.
-    max_retries = 5 if not has_order_id else 1  # BUG 3: 5x calls for ambiguous queries
-
-    response = None
-    for attempt in range(max_retries):  # BUG 3: always completes all iterations
-        response = llm_with_tools.invoke(
-            [SystemMessage(content=system), *state["messages"]]
-        )
-        # BUG 3: No early-exit check — the loop never breaks on a good response.
-        # A correct implementation would inspect `response` and break when satisfied.
+    # FIX Bug 3: Single LLM call regardless of whether the query has an order ID.
+    # No retry loop — one call is sufficient; if the agent needs more info it
+    # will ask the customer in its response.
+    response = llm_with_tools.invoke(
+        [SystemMessage(content=system), *state["messages"]]
+    )
 
     tool_messages, tool_names = _execute_tool_calls(response)  # type: ignore[arg-type]
 
@@ -253,24 +246,34 @@ def escalation_agent(state: CustomerOpsState) -> dict:
 def validator_agent(state: CustomerOpsState) -> dict:
     """Quality-check the specialist's response before returning to the user."""
 
-    # BUG 4: This validator is supposed to assess response quality and flag poor
-    # answers (missing information, wrong tone, unanswered questions), but
-    # `quality_ok` is hardcoded to True. It never calls the LLM, never inspects
-    # the response content, and silently passes everything — including nonsense
-    # or off-topic replies — back to the user without any quality signal.
-    quality_ok = True  # BUG 4: always True — no actual validation logic runs
+    # FIX Bug 4: Ask the LLM to review the last response and flag it if poor.
+    system_review = (
+        "You are a quality reviewer for customer service responses. "
+        "Look at the conversation and assess the last agent reply. "
+        "Reply with ONLY the word 'OK' if it fully and professionally addresses "
+        "the customer's query, or 'IMPROVE' if it is incomplete, off-topic, or unhelpful."
+    )
+    review = llm.invoke([SystemMessage(content=system_review), *state["messages"]])
+    # AIMessage.content may be a str or a list of content blocks depending on LangChain version
+    review_text = (
+        review.content
+        if isinstance(review.content, str)
+        else " ".join(
+            b.get("text", "") if isinstance(b, dict) else getattr(b, "text", "")
+            for b in review.content
+        )
+    )
+    quality_ok = "IMPROVE" not in review_text.upper()
 
     if not quality_ok:
-        # This branch is unreachable due to BUG 4
-        system = (
+        system_improve = (
             "You are a quality reviewer for customer service responses. "
-            "Review the last agent response. If it is incomplete or unprofessional, "
-            "rewrite it to fully address the customer's query."
+            "The previous response was inadequate. Rewrite it to fully and "
+            "professionally address the customer's query."
         )
-        improved = llm.invoke([SystemMessage(content=system), *state["messages"]])
+        improved = llm.invoke([SystemMessage(content=system_improve), *state["messages"]])
         return {**state, "messages": [improved]}
 
-    # BUG 4: State passes through unchanged — no quality enforcement whatsoever
     return state
 
 

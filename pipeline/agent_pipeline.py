@@ -46,9 +46,9 @@ def agent_pipeline() -> None:
     config       = tune_agent(feature_set, drift_report)
     manifest     = ingest_agent(config)
 
-    # Evaluation
-    eval_report  = run_evals(manifest)
-    slice_report = run_slice_evals(manifest, feature_set)
+    # Evaluation — cache disabled so bug fixes in the agent are always picked up
+    eval_report  = run_evals.with_options(enable_cache=False)(manifest)
+    slice_report = run_slice_evals.with_options(enable_cache=False)(manifest, feature_set)
     comparison   = champion_challenger(eval_report, slice_report)
     gate_passed  = quality_gate(eval_report, slice_report, comparison)
 

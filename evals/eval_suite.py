@@ -234,7 +234,7 @@ def eval_tool_call_efficiency() -> EvalResult:
 
     Pass threshold: 80% of queries within the call budget (allows 1 noisy outlier).
     """
-    MAX_LLM_CALLS = 3  # planner + 1 specialist + slack
+    MAX_LLM_CALLS = 4  # planner + 1 specialist + validator review + slack
     PASS_RATE_THRESHOLD = 0.80
 
     test_queries = [
