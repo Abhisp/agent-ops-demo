@@ -1,0 +1,6 @@
+{
+  "order_status": 0.3,
+  "refund_request": 0.3,
+  "complaint": 0.2,
+  "ambiguous": 0.2
+}
