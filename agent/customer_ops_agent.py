@@ -134,23 +134,19 @@ def planner_agent(state: CustomerOpsState) -> dict:
     # -- ROUTING LOGIC --
     lower = last_message.lower()
 
-    if "where" in lower:
-        # BUG 1: "where" queries should always go to order_agent, but 30% of the
-        # time they are incorrectly routed to refund_agent, simulating a flawed
-        # keyword-priority bug in the routing heuristic.
-        if random.random() < 0.30:  # BUG 1
-            routing = {"agent": "refund_agent", "confidence": 0.65}
-        else:
-            routing = {"agent": "order_agent", "confidence": 0.90}
+    # FIX Bug 1: routing is now fully deterministic — no random branch.
+    # Escalation keywords are checked FIRST so complaints that also mention
+    # "order" or "package" are not silently swallowed by the order branch.
+    if any(w in lower for w in ("complaint", "angry", "frustrated", "upset", "terrible",
+                                 "worst", "awful", "horrible", "unacceptable", "manager")):
+        routing = {"agent": "escalation_agent", "confidence": 0.95}
 
     elif any(w in lower for w in ("refund", "return", "money back", "charge", "reimburse")):
         routing = {"agent": "refund_agent", "confidence": 0.95}
 
-    elif any(w in lower for w in ("order", "status", "delivery", "track", "shipped", "arrive", "package")):
+    elif any(w in lower for w in ("where", "order", "status", "delivery", "track",
+                                   "shipped", "arrive", "package")):
         routing = {"agent": "order_agent", "confidence": 0.90}
-
-    elif any(w in lower for w in ("complaint", "angry", "frustrated", "upset", "terrible", "worst", "awful", "horrible", "unacceptable", "manager")):
-        routing = {"agent": "escalation_agent", "confidence": 0.95}
 
     else:
         routing = {"agent": "order_agent", "confidence": 0.50}
