@@ -1,0 +1,66 @@
+{
+  "queries": [
+    {
+      "id": 1,
+      "category": "order_status",
+      "query": "What is the status of my order ORD-001?",
+      "expected_agent": "order_agent"
+    },
+    {
+      "id": 2,
+      "category": "order_status",
+      "query": "Can you check on order ORD-002 for me? I want to know when it arrives.",
+      "expected_agent": "order_agent"
+    },
+    {
+      "id": 3,
+      "category": "order_status",
+      "query": "I placed order ORD-003 three days ago and haven't gotten any updates on delivery.",
+      "expected_agent": "order_agent"
+    },
+    {
+      "id": 4,
+      "category": "refund_request",
+      "query": "I need a refund for order ORD-001. The laptop I received was defective.",
+      "expected_agent": "refund_agent"
+    },
+    {
+      "id": 5,
+      "category": "refund_request",
+      "query": "I want my money back for order ORD-002. They sent me the wrong phone model.",
+      "expected_agent": "refund_agent"
+    },
+    {
+      "id": 6,
+      "category": "refund_request",
+      "query": "Please process a return and refund for order ORD-003. The item arrived with a broken screen.",
+      "expected_agent": "refund_agent"
+    },
+    {
+      "id": 7,
+      "category": "complaint",
+      "query": "This is absolutely terrible service! My package has been lost for two weeks and nobody is helping me. I am beyond frustrated and will never shop here again!",
+      "expected_agent": "escalation_agent"
+    },
+    {
+      "id": 8,
+      "category": "complaint",
+      "query": "I am extremely upset. I was charged twice for the same order and I've been waiting three weeks with zero resolution. This is completely unacceptable and I want to speak to a manager!",
+      "expected_agent": "escalation_agent"
+    },
+    {
+      "id": 9,
+      "category": "ambiguous",
+      "query": "Where is my stuff?",
+      "expected_agent": "order_agent",
+      "note": "Contains 'where' — triggers Bug 1 (30% misrouting probability to refund_agent)"
+    },
+    {
+      "id": 10,
+      "category": "ambiguous",
+      "query": "I have a problem with something I bought last week and I'm not happy about it",
+      "expected_agent": "order_agent",
+      "note": "Vague, no order ID — triggers Bug 3 (OrderAgent retries up to 5 times)"
+    }
+  ]
+}
